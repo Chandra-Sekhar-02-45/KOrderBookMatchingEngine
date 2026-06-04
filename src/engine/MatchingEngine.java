@@ -1,11 +1,15 @@
 package engine;
 
+import confirmation.TradeConfirmer;
 import model.Order;
 import model.Trade;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class MatchingEngine implements Runnable {
 
@@ -14,30 +18,51 @@ public class MatchingEngine implements Runnable {
     private volatile boolean marketOpen = true;
 
     private List<Order> buyOrders = new ArrayList<>();
+
     private List<Order> sellOrders = new ArrayList<>();
 
-    private List<Trade> matchedTrades = new ArrayList<>();
+    private List<Trade> matchedTrades =
+            new ArrayList<>();
 
-    public MatchingEngine(BlockingQueue<Order> orderQueue) {
+    private List<CompletableFuture<Void>>
+            confirmationFutures =
+            new ArrayList<>();
+
+    private ReentrantLock orderBookLock =
+            new ReentrantLock();
+
+    public MatchingEngine(
+            BlockingQueue<Order> orderQueue) {
+
         this.orderQueue = orderQueue;
     }
 
     public void closeMarket() {
+
         marketOpen = false;
     }
 
     public List<Trade> getMatchedTrades() {
+
         return matchedTrades;
+    }
+
+    public List<CompletableFuture<Void>>
+    getConfirmationFutures() {
+
+        return confirmationFutures;
     }
 
     @Override
     public void run() {
 
-        while (marketOpen || !orderQueue.isEmpty()) {
+        while (marketOpen ||
+                !orderQueue.isEmpty()) {
 
             try {
 
-                Order order = orderQueue.poll();
+                Order order =
+                        orderQueue.poll();
 
                 if (order != null) {
 
@@ -47,30 +72,66 @@ public class MatchingEngine implements Runnable {
                 Thread.sleep(100);
 
             } catch (Exception e) {
+
                 e.printStackTrace();
             }
         }
 
-        System.out.println("\nMatching Engine Stopped");
+        System.out.println(
+                "\nMatching Engine Stopped"
+        );
     }
 
-    private void processOrder(Order order) {
+    private void processOrder(
+            Order order) {
 
-        if ("BUY".equals(order.getSide())) {
+        try {
 
-            processBuyOrder(order);
+            if (orderBookLock.tryLock(
+                    50,
+                    TimeUnit.MILLISECONDS)) {
 
-        } else {
+                try {
 
-            processSellOrder(order);
+                    if ("BUY".equals(
+                            order.getSide())) {
+
+                        processBuyOrder(
+                                order);
+
+                    } else {
+
+                        processSellOrder(
+                                order);
+                    }
+
+                } finally {
+
+                    orderBookLock.unlock();
+                }
+
+            } else {
+
+                System.out.println(
+                        "Could not acquire lock"
+                );
+            }
+
+        } catch (InterruptedException e) {
+
+            Thread.currentThread()
+                    .interrupt();
         }
     }
 
-    private void processBuyOrder(Order buyOrder) {
+    private void processBuyOrder(
+            Order buyOrder) {
 
-        for (Order sellOrder : sellOrders) {
+        for (Order sellOrder :
+                sellOrders) {
 
-            if (buyOrder.getPrice() >= sellOrder.getPrice()) {
+            if (buyOrder.getPrice()
+                    >= sellOrder.getPrice()) {
 
                 Trade trade =
                         new Trade(
@@ -81,10 +142,50 @@ public class MatchingEngine implements Runnable {
 
                 matchedTrades.add(trade);
 
-                sellOrders.remove(sellOrder);
+                sellOrders.remove(
+                        sellOrder);
 
                 System.out.println(
-                        "MATCH FOUND -> " + trade
+                        "MATCH FOUND -> "
+                                + trade
+                );
+
+                CompletableFuture<Void>
+                        future =
+                        CompletableFuture
+                                .supplyAsync(
+                                        () ->
+                                                TradeConfirmer
+                                                        .confirmTrade(
+                                                                trade
+                                                        )
+                                )
+                                .exceptionally(
+                                        ex -> {
+
+                                            System.out.println(
+                                                    "CONFIRMATION FAILED -> "
+                                                            + trade
+                                            );
+
+                                            return false;
+                                        }
+                                )
+                                .thenAccept(
+                                        success -> {
+
+                                            if (success) {
+
+                                                System.out.println(
+                                                        "CONFIRMED -> "
+                                                                + trade
+                                                );
+                                            }
+                                        }
+                                );
+
+                confirmationFutures.add(
+                        future
                 );
 
                 return;
@@ -94,11 +195,14 @@ public class MatchingEngine implements Runnable {
         buyOrders.add(buyOrder);
     }
 
-    private void processSellOrder(Order sellOrder) {
+    private void processSellOrder(
+            Order sellOrder) {
 
-        for (Order buyOrder : buyOrders) {
+        for (Order buyOrder :
+                buyOrders) {
 
-            if (buyOrder.getPrice() >= sellOrder.getPrice()) {
+            if (buyOrder.getPrice()
+                    >= sellOrder.getPrice()) {
 
                 Trade trade =
                         new Trade(
@@ -109,10 +213,50 @@ public class MatchingEngine implements Runnable {
 
                 matchedTrades.add(trade);
 
-                buyOrders.remove(buyOrder);
+                buyOrders.remove(
+                        buyOrder);
 
                 System.out.println(
-                        "MATCH FOUND -> " + trade
+                        "MATCH FOUND -> "
+                                + trade
+                );
+
+                CompletableFuture<Void>
+                        future =
+                        CompletableFuture
+                                .supplyAsync(
+                                        () ->
+                                                TradeConfirmer
+                                                        .confirmTrade(
+                                                                trade
+                                                        )
+                                )
+                                .exceptionally(
+                                        ex -> {
+
+                                            System.out.println(
+                                                    "CONFIRMATION FAILED -> "
+                                                            + trade
+                                            );
+
+                                            return false;
+                                        }
+                                )
+                                .thenAccept(
+                                        success -> {
+
+                                            if (success) {
+
+                                                System.out.println(
+                                                        "CONFIRMED -> "
+                                                                + trade
+                                                );
+                                            }
+                                        }
+                                );
+
+                confirmationFutures.add(
+                        future
                 );
 
                 return;

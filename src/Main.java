@@ -1,6 +1,6 @@
+import engine.MatchingEngine;
 import model.Order;
 import trader.TraderTask;
-import engine.MatchingEngine;
 
 import java.util.Arrays;
 import java.util.List;
@@ -76,8 +76,20 @@ public class Main {
 
             engineThread.join();
 
+            CompletableFuture.allOf(
+                    matchingEngine
+                            .getConfirmationFutures()
+                            .toArray(new CompletableFuture[0])
+            ).join();
+
+            System.out.println(
+                    "\nAll confirmations completed."
+            );
+
         } catch (Exception e) {
+
             e.printStackTrace();
+
         } finally {
 
             executor.shutdown();
