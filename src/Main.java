@@ -83,7 +83,40 @@ public class Main {
             ).join();
 
             System.out.println(
-                    "\nAll confirmations completed."
+                    "\n=========== MARKET SUMMARY ==========="
+            );
+
+            System.out.println(
+                    "Orders Submitted      : 4"
+            );
+
+            System.out.println(
+                    "Trades Matched        : "
+                            + matchingEngine.getMatchedTradeCount()
+            );
+
+            System.out.println(
+                    "Trades Confirmed      : "
+                            + matchingEngine.getSuccessfulConfirmations()
+            );
+
+            System.out.println(
+                    "Trades Failed         : "
+                            + matchingEngine.getFailedConfirmations()
+            );
+
+            System.out.println(
+                    "Buy Orders Remaining  : "
+                            + matchingEngine.getRemainingBuyOrders()
+            );
+
+            System.out.println(
+                    "Sell Orders Remaining : "
+                            + matchingEngine.getRemainingSellOrders()
+            );
+
+            System.out.println(
+                    "======================================"
             );
 
         } catch (Exception e) {

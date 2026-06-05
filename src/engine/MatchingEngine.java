@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class MatchingEngine implements Runnable {
@@ -30,6 +31,12 @@ public class MatchingEngine implements Runnable {
 
     private ReentrantLock orderBookLock =
             new ReentrantLock();
+
+    private AtomicInteger successfulConfirmations =
+            new AtomicInteger();
+
+    private AtomicInteger failedConfirmations =
+            new AtomicInteger();
 
     public MatchingEngine(
             BlockingQueue<Order> orderQueue) {
@@ -150,44 +157,7 @@ public class MatchingEngine implements Runnable {
                                 + trade
                 );
 
-                CompletableFuture<Void>
-                        future =
-                        CompletableFuture
-                                .supplyAsync(
-                                        () ->
-                                                TradeConfirmer
-                                                        .confirmTrade(
-                                                                trade
-                                                        )
-                                )
-                                .exceptionally(
-                                        ex -> {
-
-                                            System.out.println(
-                                                    "CONFIRMATION FAILED -> "
-                                                            + trade
-                                            );
-
-                                            return false;
-                                        }
-                                )
-                                .thenAccept(
-                                        success -> {
-
-                                            if (success) {
-
-                                                System.out.println(
-                                                        "CONFIRMED -> "
-                                                                + trade
-                                                );
-                                            }
-                                        }
-                                );
-
-                confirmationFutures.add(
-                        future
-                );
-
+               confirmTradeAsync(trade);
                 return;
             }
         }
@@ -221,48 +191,72 @@ public class MatchingEngine implements Runnable {
                                 + trade
                 );
 
-                CompletableFuture<Void>
-                        future =
-                        CompletableFuture
-                                .supplyAsync(
-                                        () ->
-                                                TradeConfirmer
-                                                        .confirmTrade(
-                                                                trade
-                                                        )
-                                )
-                                .exceptionally(
-                                        ex -> {
-
-                                            System.out.println(
-                                                    "CONFIRMATION FAILED -> "
-                                                            + trade
-                                            );
-
-                                            return false;
-                                        }
-                                )
-                                .thenAccept(
-                                        success -> {
-
-                                            if (success) {
-
-                                                System.out.println(
-                                                        "CONFIRMED -> "
-                                                                + trade
-                                                );
-                                            }
-                                        }
-                                );
-
-                confirmationFutures.add(
-                        future
-                );
+                confirmTradeAsync(trade);
 
                 return;
             }
         }
 
+
+
         sellOrders.add(sellOrder);
+
+
+    }
+
+    public int getSuccessfulConfirmations() {
+        return successfulConfirmations.get();
+    }
+
+    public int getFailedConfirmations() {
+        return failedConfirmations.get();
+    }
+
+    public int getMatchedTradeCount() {
+        return matchedTrades.size();
+    }
+
+
+    public int getRemainingBuyOrders() {
+        return buyOrders.size();
+    }
+
+    public int getRemainingSellOrders() {
+        return sellOrders.size();
+    }
+
+    private void confirmTradeAsync(Trade trade) {
+
+        CompletableFuture<Void> future =
+                CompletableFuture
+                        .supplyAsync(() ->
+                                TradeConfirmer
+                                        .confirmTrade(trade)
+                        )
+                        .exceptionally(ex -> {
+
+                            failedConfirmations.incrementAndGet();
+
+                            System.out.println(
+                                    "CONFIRMATION FAILED -> "
+                                            + trade
+                            );
+
+                            return false;
+                        })
+                        .thenAccept(success -> {
+
+                            if (success) {
+
+                                successfulConfirmations.incrementAndGet();
+
+                                System.out.println(
+                                        "CONFIRMED -> "
+                                                + trade
+                                );
+                            }
+                        });
+
+        confirmationFutures.add(future);
     }
 }
